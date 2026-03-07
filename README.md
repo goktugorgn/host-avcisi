@@ -21,6 +21,8 @@
   - **NAS/Depolama** | 📹 **CCTV** | 🧊 **Sanallaştırma (ESXi/Proxmox)**
 - **Derin İstihbarat**: Web başlıklarını, teknolojileri ve SSL/TLS Sertifika detaylarını otomatik olarak çıkarmak için `httpx` ile entegre çalışır.
 - **Stealth (Gizli) Mod**: Gürültüyü en aza indirmek için ARP önbellek analizi ve rastgele, yanıltıcı (decoy) paketler kullanan sessiz host keşfi.
+- **İlerleme Göstergesi**: Taramanın hangi aşamada olduğunu, yüzde ilerlemesini ve geçen süreyi gösteren gerçek zamanlı progress bar.
+- **Bildirim Desteği**: Tarama tamamlandığında macOS ve Linux'ta masaüstü bildirimi (`--notify`).
 - **Gizlilik Bilgisi**: Gizli veya özel cihazlar konusunda sizi uyarmak için "Randomize MAC Adreslerini" (LAA) sarı renkte tespit eder.
 - **Dışa Aktarılabilir**: Doğrudan Masaüstünüze Excel uyumlu tek tıkla CSV çıktısı verir.
 

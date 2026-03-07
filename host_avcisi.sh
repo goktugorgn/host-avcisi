@@ -14,6 +14,8 @@
 #    - Pro Dashboard : Visual summary of assets (IoT, Ent, Virt, etc.)
 #    - Smart Labels  : 🛠️ iLO, 🍎 Apple, 🏗️ Enterprise, 🗃️ Storage, 📹 CCTV
 #    - Intel (httpx) : HTTP titles, technologies, and SSL/TLS CN details
+#    - Progress Bar  : Real-time pipeline progress with elapsed time
+#    - Notification  : Cross-platform desktop notification on scan completion
 #    - Privacy Info  : Automatic Randomized MAC (LAA) detection
 #    - Stealth       : ARP-based discovery + Randomized/Decoy ping probes
 #
@@ -62,6 +64,71 @@ trap cleanup EXIT INT TERM
 
 # Helper to register temp files for cleanup
 track_tmp() { TMP_FILES+=("$1"); echo "$1"; }
+
+# ---------------- Progress Bar (Pure Bash) ----------------
+TOTAL_STEPS=6
+CURRENT_STEP=0
+STEP_LABELS=(
+  "Initializing"
+  "Host Discovery"
+  "ARP Warm-up"
+  "Port Scanning"
+  "Intel Gathering"
+  "Analysis & Reporting"
+)
+
+step_progress() {
+  # Usage: step_progress [step_number] [optional_detail]
+  local step="${1:-$CURRENT_STEP}"
+  local detail="${2:-}"
+  CURRENT_STEP="$step"
+  local label="${STEP_LABELS[$step]:-Bilinmeyen}"
+  local pct=$(( (step * 100) / TOTAL_STEPS ))
+  if [[ $pct -gt 100 ]]; then pct=100; fi
+
+  # Build the bar (width=30)
+  local bar_w=30
+  local filled=$(( (pct * bar_w) / 100 ))
+  local empty=$(( bar_w - filled ))
+  local bar=""
+  for (( b=0; b<filled; b++ )); do bar+="█"; done
+  for (( b=0; b<empty; b++ )); do bar+="░"; done
+
+  # Elapsed time
+  local now; now=$(date +%s)
+  local elapsed=$(( now - SC_START ))
+
+  # Detail suffix
+  local suffix=""
+  if [[ -n "$detail" ]]; then suffix=" ${DIM}($detail)${RST}"; fi
+
+  # Print (overwrite line with \r)
+  printf "\r${ORG}[%d/%d]${RST} ${GRN}%s${RST} %3d%% ${DIM}[%ds]${RST}%s  " \
+    "$step" "$TOTAL_STEPS" "$bar" "$pct" "$elapsed" "$suffix"
+
+  # If final step, newline
+  if [[ "$step" -ge "$TOTAL_STEPS" ]]; then echo; fi
+}
+
+# ---------------- Notification (Cross-platform) ----------------
+NOTIFY=1
+
+send_notification() {
+  if [[ "$NOTIFY" -eq 0 ]]; then return 0; fi
+  local title="${1:-host-avcısı}"
+  local message="${2:-Scan completed.}"
+
+  # macOS: osascript
+  if [[ "$(uname -s)" == "Darwin" ]] && command -v osascript >/dev/null 2>&1; then
+    osascript -e "display notification \"$message\" with title \"$title\" sound name \"Glass\"" 2>/dev/null || true
+  # Linux: notify-send
+  elif command -v notify-send >/dev/null 2>&1; then
+    notify-send -u normal "$title" "$message" 2>/dev/null || true
+  fi
+
+  # Terminal bell (always, as fallback)
+  printf '\a' 2>/dev/null || true
+}
 
 # ---------------- Colors ----------------
 if [[ -t 1 ]]; then
@@ -167,6 +234,7 @@ WARM_ARP=0
 NO_INTEL=0
 STEALTH=0
 SAVE_CSV=0
+NOTIFY=1
 
 PORTS="22,80,111,139,443,445,623,902,903,1433,1521,2049,2375,2376,3000,3306,3389,5000,5001,5432,5480,5601,5985,5986,6161,6379,8006,8080,8081,8443,9090,9100,9200,9443,10000,11211,17988,17990"
 HTTPX_PORTS="80,443,3000,5000,5001,5480,5986,8006,8080,8081,8443,9443,10000,17988,17990"
@@ -420,6 +488,8 @@ fi
 echo
 
 # ---------------- Host discovery (fast ping sweep via nmap if available) ----------------
+step_progress 1 "Discovering alive hosts"
+echo
 HOSTS=()
 if [[ "$STEALTH" -eq 1 ]]; then
   echo "${YLW}[!] Stealth mode: using ARP cache discovery...${RST}"
@@ -491,6 +561,8 @@ fi
 # Optional: warm ARP cache
 # macOS ping -W is in SECONDS (not ms like Linux), so use -W 1 (1 second)
 if [[ "$WARM_ARP" -eq 1 && "${#HOSTS[@]}" -gt 0 ]]; then
+  step_progress 2 "Warming ARP cache"
+  echo
   echo "${BLU}[*] Warming ARP cache (parallel)...${RST}"
   # Ping everyone in the background for high speed
   for ip in "${HOSTS[@]}"; do
@@ -501,6 +573,8 @@ if [[ "$WARM_ARP" -eq 1 && "${#HOSTS[@]}" -gt 0 ]]; then
 fi
 
 # ---------------- Port discovery ----------------
+step_progress 3 "Scanning ports ($ENGINE)"
+echo
 echo "${BLU}[*] Probing ports (open only)...${RST}"
 
 RESULTS=() # "IP|p1,p2,p3"
@@ -846,6 +920,8 @@ confidence_score() {
 }
 
 # ---------------- Intel via httpx ----------------
+step_progress 4 "Gathering intel"
+echo
 INTEL_TSV=""
 if [[ "$NO_INTEL" -eq 0 ]]; then
   INTEL_TSV="$(track_tmp "$(mktemp -t sh_httpx.XXXXXX)")"
@@ -1062,6 +1138,8 @@ if [[ "$NO_INTEL" -eq 0 && -n "${INTEL_TSV:-}" && -f "$INTEL_TSV" ]]; then HAS_I
 # calc_widths() removed in favor of content-aware auto-fit
 
 # ---------------- Dynamic Table (Auto-fit to content) ----------------
+step_progress 5 "Analysis & Labeling"
+echo
 # We collect all row data first to calculate maximum required widths
 declare -a TABLE_DATA
 # Add header to calculations
@@ -1135,6 +1213,8 @@ done
 
 line_gen() { printf "%.0s-" $(seq 1 "$1"); }
 
+step_progress 6 "Generating report"
+echo
 echo "${GRN}[+] Findings${RST}"
 # Print Header
 if [[ "$HAS_INTEL" -eq 1 ]]; then
@@ -1229,4 +1309,11 @@ PY
   
   echo
   echo "${GRN}[+] CSV saved (Excel-ready):${RST} ${YLW}${CSV_PATH}${RST}"
+fi
+
+# ---------------- Notification ----------------
+if [[ "$NOTIFY" -eq 1 ]]; then
+  _notify_elapsed=$(($(date +%s) - SC_START))
+  _notify_msg="${H_COUNT:-0} hosts, ${P_COUNT:-0} services found (${_notify_elapsed}s)"
+  send_notification "🔍 host-avcısı" "$_notify_msg"
 fi
