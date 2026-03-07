@@ -6,6 +6,7 @@
 [![Bash](https://img.shields.io/badge/Bash-4EAA25?logo=gnubash&logoColor=fff)](#)
 [![Speed](https://img.shields.io/badge/Performance-Optimized-red.svg)](#)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg)](#)
+[![Author](https://img.shields.io/badge/Geli%C5%9Ftirici-G%C3%B6ktu%C4%9F%20%C3%96rg%C3%BCn-blue?style=flat-square)](#)
 [![License](https://img.shields.io/badge/lisans-MIT-blue.svg)](#)
 
 **host-avcisi**, yüksek hızlı, çok motorlu bir ağ keşif ve altyapı analiz aracıdır. Sistem yöneticileri ve güvenlik araştırmacıları için bir yardımcı program olarak tasarlanmıştır. Modern tarayıcıların hızını, derinlemesine istihbarat toplama yeteneğiyle birleştirerek yerel ağınızın eksiksiz bir görünümünü sunar.
