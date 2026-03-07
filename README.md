@@ -116,4 +116,6 @@ Araç, okunabilirliğe odaklanan temiz ve otomatik hizalanmış bir tablo sunar.
 
 ## Katkıda Bulunma
 
-Etiketleme motorunu veya tarama mantığını geliştirmek için issue açmaktan veya pull request gönderebilirsiniz..
+**[Göktuğ Örgün](https://github.com/goktugorgn)** tarafından geliştirilmiştir.
+
+Geri bildirimler, sorun bildirimleri ve katkılar serbest :)
