@@ -1291,19 +1291,31 @@ if [[ "$SAVE_CSV" -eq 1 ]]; then
   CSV_NAME="host-avcisi-${TIMESTAMP}.csv"
   CSV_PATH="$HOME/Desktop/$CSV_NAME"
   
-  # Professional CSV Export using Python (Quotes + Semicolon + Excel Hint)
+  # Professional CSV Export using Python (Quotes + Semicolon + Excel Hint + Emoji Cleanup)
   python3 - <<'PY' "$CSV_PATH" "${TABLE_DATA[@]}"
-import csv, sys
+import csv, sys, re
 path = sys.argv[1]
 data = sys.argv[2:]
+
+def clean_for_csv(text):
+    if not text: return ""
+    # 1. Remove ANSI color codes
+    text = re.sub(r'\x1b\[[0-9;]*[mK]', '', text)
+    # 2. Remove Emojis and miscellaneous symbols that break Excel
+    # This range covers most common emojis and symbols
+    text = re.sub(r'[\U00010000-\U0010ffff]', '', text) # Emojis
+    text = re.sub(r'[\u2600-\u27BF]', '', text)         # Symbols
+    text = re.sub(r'[\u2300-\u23FF]', '', text)         # Technical symbols
+    # 3. Clean any accidental newlines inside fields
+    return text.replace('\n', ' ').replace('\r', ' ').strip()
+
 with open(path, 'w', encoding='utf-8-sig', newline='') as f:
     # Add 'sep=;' so Excel doesn't ask and correctly splits columns instantly
     f.write("sep=;\n")
     writer = csv.writer(f, delimiter=';', quotechar='"', quoting=csv.QUOTE_ALL)
     for row in data:
         if row and '|' in row:
-            # Clean any accidental newlines inside fields
-            fields = [f.replace('\n', ' ').replace('\r', ' ').strip() for f in row.split('|')]
+            fields = [clean_for_csv(f) for f in row.split('|')]
             writer.writerow(fields)
 PY
   
