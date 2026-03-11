@@ -379,8 +379,16 @@ PY
 
 normalize_oui() {
   # Clean OUI: converts any MAC to XX:XX:XX format (8 chars)
-  local clean; clean=$(echo "$1" | sed 's/[-.]/:/g' | tr '[:lower:]' '[:upper:]')
-  # Extract parts 1, 2, 3 and ensure they are 2-digits
+  # Handles colon (aa:bb:cc), dash (aa-bb-cc), and Cisco dot-notation (aabb.cc11.2233)
+  local raw="$1"
+  local upper; upper=$(echo "$raw" | tr '[:lower:]' '[:upper:]')
+  # Cisco dot-notation: groups of 4 hex digits separated by dots → split to pairs
+  if [[ "$upper" =~ ^[0-9A-F]{4}\.[0-9A-F]{4}\.[0-9A-F]{4}$ ]]; then
+    local stripped; stripped="${upper//.}"
+    printf "%s:%s:%s\n" "${stripped:0:2}" "${stripped:2:2}" "${stripped:4:2}"
+    return
+  fi
+  local clean; clean=$(echo "$upper" | sed 's/[-.]/:/g')
   echo "$clean" | awk -F: '{printf("%02s:%02s:%02s\n", $1, $2, $3)}' | sed 's/ /0/g'
 }
 
@@ -418,8 +426,11 @@ count_subnet_hosts() {
     local cidr="${subnet##*/}"
     if [[ "$cidr" =~ ^[0-9]+$ ]] && [[ "$cidr" -ge 0 && "$cidr" -le 32 ]]; then
       local hosts=$(( (1 << (32 - cidr)) ))
-      # subtract network + broadcast for /30 and larger
-      [[ "$hosts" -gt 2 ]] && hosts=$((hosts - 2))
+      # /32 = single host, /31 = point-to-point (2 usable), /30+ subtract net+broadcast
+      if [[ "$cidr" -eq 32 ]]; then hosts=1
+      elif [[ "$cidr" -eq 31 ]]; then : # 2 usable, no change
+      elif [[ "$hosts" -gt 2 ]]; then hosts=$((hosts - 2))
+      fi
       echo "$hosts"
       return
     fi
@@ -543,7 +554,7 @@ elif have nmap; then
       if [[ -n "$ip" ]]; then
         HOSTS+=("$ip")
         if [[ -n "$hostname" && "$hostname" != "$ip" ]]; then
-           echo "${ip}|${hostname}" >> "$(track_tmp "/tmp/sh_names.tsv")"
+           echo "${ip}|${hostname}" >> "/tmp/sh_names.tsv"
         fi
       fi
     fi
@@ -671,9 +682,10 @@ if [[ "$ENGINE" == "naabu" ]]; then
     NAABU_ARGS=( -host "$SUBNET" -p "$_ports_input" -rate "$RATE" -timeout "$NAABU_TIMEOUT" -retries "$NAABU_RETRIES" -json -silent )
   fi
 
+  _naabu_err="$(track_tmp "$(mktemp -t sh_naabu.err.XXXXXX)")"
   NAABU_RC=0
   set +e
-  run_with_timeout_capture "$NAABU_HARD_TIMEOUT" "$PORTMAP_JSON" naabu "${NAABU_ARGS[@]}" 2>/tmp/sh_naabu.err
+  run_with_timeout_capture "$NAABU_HARD_TIMEOUT" "$PORTMAP_JSON" naabu "${NAABU_ARGS[@]}" 2>"$_naabu_err"
   NAABU_RC=$?
   set -e
 
@@ -690,12 +702,11 @@ if [[ "$ENGINE" == "naabu" ]]; then
   fi
 
   if [[ "$NAABU_RC" -ne 0 ]]; then
-    if [[ -s /tmp/sh_naabu.err ]]; then
+    if [[ -s "$_naabu_err" ]]; then
       echo "${DIM}  naabu stderr (last 10 lines):${RST}"
-      tail -n 10 /tmp/sh_naabu.err 2>/dev/null || true
+      tail -n 10 "$_naabu_err" 2>/dev/null || true
     fi
   fi
-  rm -f /tmp/sh_naabu.err >/dev/null 2>&1 || true
 
   # Fallback: naabu → rustscan → nmap
   if [[ "$ENGINE" == "rustscan" ]]; then
@@ -1247,12 +1258,12 @@ SC_END=$(date +%s); SC_DIFF=$((SC_END - SC_START))
 # Sanitize counts to ensure they are pure numbers
 H_COUNT=$(echo "${#FINAL_HOSTS[@]}" | tr -dc '0-9')
 P_COUNT=$(printf "%s" "${RESULTS[@]}" | grep -o "," | wc -l | tr -dc '0-9')
-ENT_COUNT=$(printf "%s\n" "${TABLE_DATA[@]}" | grep -c "Enterprise" | tr -dc '0-9' || echo 0)
-IOT_COUNT=$(printf "%s\n" "${TABLE_DATA[@]}" | grep -c "IoT" | tr -dc '0-9' || echo 0)
-VIRT_COUNT=$(printf "%s\n" "${TABLE_DATA[@]}" | grep -c "Virt" | tr -dc '0-9' || echo 0)
-STOR_COUNT=$(printf "%s\n" "${TABLE_DATA[@]}" | grep -c "Storage" | tr -dc '0-9' || echo 0)
-NET_COUNT=$(printf "%s\n" "${TABLE_DATA[@]}" | grep -c "Network" | tr -dc '0-9' || echo 0)
-APPLE_COUNT=$(printf "%s\n" "${TABLE_DATA[@]}" | grep -c "Apple" | tr -dc '0-9' || echo 0)
+ENT_COUNT=$(printf "%s\n" "${TABLE_DATA[@]}" | { grep -c "Enterprise" || true; } | tr -dc '0-9')
+IOT_COUNT=$(printf "%s\n" "${TABLE_DATA[@]}" | { grep -c "IoT" || true; } | tr -dc '0-9')
+VIRT_COUNT=$(printf "%s\n" "${TABLE_DATA[@]}" | { grep -c "Virt" || true; } | tr -dc '0-9')
+STOR_COUNT=$(printf "%s\n" "${TABLE_DATA[@]}" | { grep -c "Storage" || true; } | tr -dc '0-9')
+NET_COUNT=$(printf "%s\n" "${TABLE_DATA[@]}" | { grep -c "Network" || true; } | tr -dc '0-9')
+APPLE_COUNT=$(printf "%s\n" "${TABLE_DATA[@]}" | { grep -c "Apple" || true; } | tr -dc '0-9')
 
 echo
 echo "${MAG}============================================================${RST}"
@@ -1267,10 +1278,6 @@ printf "  %-20s: %-10s | %-15s: %-10s\n" "IoT/Smart Home" "$IOT_COUNT" "Apple/Ai
 echo "${MAG}============================================================${RST}"
 
 # Cleanup
-[[ -n "${TMP_VENDOR_CACHE:-}" && -f "$TMP_VENDOR_CACHE" ]] && rm -f "$TMP_VENDOR_CACHE" || true
-[[ -n "${INTEL_TSV:-}" && -f "$INTEL_TSV" ]] && rm -f "$INTEL_TSV" || true
-[[ -f "/tmp/sh_names.tsv" ]] && rm -f "/tmp/sh_names.tsv" || true
-
 [[ -n "${TMP_VENDOR_CACHE:-}" && -f "$TMP_VENDOR_CACHE" ]] && rm -f "$TMP_VENDOR_CACHE" || true
 [[ -n "${INTEL_TSV:-}" && -f "$INTEL_TSV" ]] && rm -f "$INTEL_TSV" || true
 [[ -f "/tmp/sh_names.tsv" ]] && rm -f "/tmp/sh_names.tsv" || true
